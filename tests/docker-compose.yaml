@@ -1,0 +1,74 @@
+version: '2.1'
+services:
+
+  data-broker:
+    image: dojot/data-broker
+    restart: always
+    depends_on:
+      - kafka
+      - data-broker-redis
+
+  zookeeper:
+    image: "zookeeper:3.4"
+    restart: always
+
+  postgres-users:
+    image: postgres:9.4-alpine
+    restart: on-failure
+    command: >
+      bash -c "createuser kong -d -h postgres -U postgres && createdb kong -U kong -h postgres"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 100m
+
+  postgres:
+    image: "postgres:9.4"
+    restart: always
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  data-broker-redis:
+    image: redis
+    restart: always
+    networks:
+      default:
+        aliases:
+          - dbmredis
+
+  kafka:
+    image: "ches/kafka:0.10.1.1"
+    depends_on:
+      - zookeeper
+    restart: always
+    environment:
+      ZOOKEEPER_IP: zookeeper
+      KAFKA_NUM_PARTITIONS: 10
+
+  device-manager:
+    image: dojot/device-manager
+    depends_on:
+      - postgres
+      - kafka
+      - device-manager-redis
+    environment:
+      - DEV_MNGR_CRYPTO_PASS="kamehameHA"
+      - DEV_MNGR_CRYPTO_IV=1234567890123456
+      - DEV_MNGR_CRYPTO_SALT="shuriken"        
+
+  device-manager-redis:
+    image: redis
+    restart: always
+
+  test-runner:
+    environment:
+      - DEV_MNGR_CRYPTO_PASS="kamehameHA"
+      - DEV_MNGR_CRYPTO_IV=1234567890123456
+      - DEV_MNGR_CRYPTO_SALT="shuriken"
+    image: dredd/test
